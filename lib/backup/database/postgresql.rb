@@ -22,6 +22,10 @@ module Backup
       attr_accessor :host, :port, :socket
 
       ##
+      # Connection URI
+      attr_accessor :uri
+
+      ##
       # Tables to skip while dumping the database.
       # If `name` is set to :all (or not specified), these are ignored.
       attr_accessor :skip_tables
@@ -37,9 +41,29 @@ module Backup
 
       def initialize(model, database_id = nil, &block)
         super
+        check_options
         instance_eval(&block) if block_given?
 
         @name ||= :all
+      end
+
+      ##
+      # Check
+      def check_options
+        return unless uri
+        ignored_options = {
+          username: username,
+          password: password,
+          host: host,
+          port: port,
+          socket: socket,
+          name: name
+        }.reject { |_, value| value.nil? }
+        return if ignored_options.empty?
+
+        Logger.warn "PostgreSQL: the options " \
+          "#{ignored_options.keys.join(", ")} are set, but will be " \
+          "ignored because the `:uri` is set."
       end
 
       ##
@@ -74,10 +98,15 @@ module Backup
       end
 
       def pgdump
+        args = "#{tables_to_dump} #{tables_to_skip} #{user_options}"
+        if uri
+          args << " #{uri}"
+        else
+          args << " #{username_option} #{connectivity_options} #{name}"
+        end
         password_option.to_s +
           sudo_option.to_s +
-          "#{utility(:pg_dump)} #{username_option} #{connectivity_options} " \
-          "#{user_options} #{tables_to_dump} #{tables_to_skip} #{name}"
+          "#{utility(:pg_dump)} #{args}"
       end
 
       def pgdumpall
